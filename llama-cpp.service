@@ -1,0 +1,18 @@
+[Unit]
+Description=Stateless Isolated Llama.cpp Inference Server
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/conf.d/llama-isolated
+ExecStart=/usr/lib/llama-cpp-isolated/run_server.sh
+Restart=always
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=15s
+
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+
+[Install]
+WantedBy=multi-user.target
