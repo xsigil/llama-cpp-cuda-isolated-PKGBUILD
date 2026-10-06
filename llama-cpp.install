@@ -1,0 +1,33 @@
+post_install() {
+    # 専用システムユーザー・グループの確認と作成
+    if ! getent group llamacpp >/dev/null; then
+        groupadd -r llamacpp
+    fi
+    if ! getent passwd llamacpp >/dev/null; then
+        useradd -r -g llamacpp -d /srv/llama -s /usr/bin/nologin -c "Stateless Llama Jail User" llamacpp
+    fi
+
+    # 標準モデルディレクトリの作成と権限設定
+    mkdir -p /srv/llama/models
+    chown -R llamacpp:llamacpp /srv/llama
+
+    echo ":: Package installed successfully."
+    echo ":: Download your model to /srv/llama/models/model.gguf"
+    echo ":: Start service: systemctl start llama-cpp"
+
+
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    if getent passwd llamacpp >/dev/null; then
+        userdel llamacpp 2>/dev/null || true
+    fi
+    if getent group llamacpp >/dev/null; then
+        groupdel llamacpp 2>/dev/null || true
+    fi
+}
+

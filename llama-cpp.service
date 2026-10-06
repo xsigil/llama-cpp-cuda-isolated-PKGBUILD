@@ -3,13 +3,12 @@ Description=Stateless Isolated Llama.cpp Inference Server
 After=network.target
 
 [Service]
-Type=simple
-EnvironmentFile=-/etc/conf.d/llama-isolated
+Type=exec
 ExecStart=/usr/lib/llama-cpp-isolated/run_server.sh
-Restart=always
+Restart=on-failure
 RestartSec=5s
 KillMode=mixed
-TimeoutStopSec=15s
+TimeoutStopSec=10s
 
 ProtectControlGroups=yes
 ProtectKernelModules=yes

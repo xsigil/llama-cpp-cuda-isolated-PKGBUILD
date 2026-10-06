@@ -1,0 +1,17 @@
+# Arch Linux makepkg artifacts
+src/
+pkg/
+*.pkg.tar.zst
+*.pkg.tar.xz
+*.log
+*.log.*
+
+# GGUF models and downloads
+*.gguf
+*.bin
+*.safetensors
+
+# Runtime and local configs
+*.tmp
+*.bak
+*~

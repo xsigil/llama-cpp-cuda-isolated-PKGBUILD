@@ -1,78 +1,55 @@
+# Maintainer: MASAHIRO SUGAYA <parorafia@xsigil.dev>
 pkgname=llama-cpp-cuda-isolated
-pkgver=1.0.0
+pkgver=b3800
 pkgrel=1
-pkgdesc="Stateless RAM-jailed llama.cpp server with CUDA acceleration and unshare/chroot isolation"
+pkgdesc="Stateless, hardware-accelerated local LLM inference server inside volatile RAM jail"
 arch=('x86_64')
-url="https://github.com/ggerganov/llama.cpp"
+url="https://github.com/ggml-org/llama.cpp"
 license=('MIT')
-depends=('cuda' 'gcc-libs' 'glibc')
-makedepends=('cmake' 'git' 'wget')
+depends=('cuda' 'util-linux' 'systemd')
+makedepends=('git' 'cmake')
 backup=('etc/conf.d/llama-isolated')
+install=llama-cpp.install
 source=(
-    "git+https://github.com/ggerganov/llama.cpp.git"
-    "run_server.sh"
-    "llama-cpp.service"
-    "llama-isolated.conf"
+    "git+https://github.com/ggml-org/llama.cpp.git"
+    'run_server.sh'
+    'llama-cpp.service'
+    'llama-isolated.conf'
+    'llama-user.conf'
 )
 sha256sums=(
     'SKIP'
     'SKIP'
     'SKIP'
     'SKIP'
+    'SKIP'
 )
 
-# 任意の GGUF URL を指定（認証が必要な場合は環境変数 HF_TOKEN を利用可能）
-_model_url="${MODEL_DOWNLOAD_URL:-https://huggingface.co/google/gemma-4-31b-it-GGUF/resolve/main/gemma-4-31b-it-Q4_K_M.gguf}"
-_model_filename="model.gguf"
-
-prepare() {
-    cd "$srcdir"
-    
-    if [[ ! -f "${_model_filename}" ]]; then
-        msg2 "Fetching model GGUF via resilient HTTP stream..."
-        local auth_header=()
-        if [[ -n "${HF_TOKEN:-}" ]]; then
-            auth_header=(--header="Authorization: Bearer ${HF_TOKEN}")
-        fi
-
-        wget -c \
-            --tries=0 \
-            --retry-connrefused \
-            --waitretry=5 \
-            --read-timeout=30 \
-            --timeout=15 \
-            "${auth_header[@]}" \
-            -O "${_model_filename}" \
-            "${_model_url}"
-    fi
-}
-
 build() {
-    cd "$srcdir/llama.cpp"
+    cd "${srcdir}/llama.cpp"
     cmake -B build \
         -DGGML_CUDA=ON \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr
-    cmake --build build --config Release -j$(nproc)
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DLLAMA_BUILD_EXAMPLES=OFF \
+        -DLLAMA_BUILD_SERVER=ON
+    cmake --build build --config Release -j"$(nproc)" --target llama-server
 }
 
 package() {
-    cd "$srcdir/llama.cpp"
-    DESTDIR="$pkgdir" cmake --install build
+    cd "${srcdir}/llama.cpp"
 
-    # 1. 隔離実行用スクリプトの配置
-    install -d -m 0755 "$pkgdir/usr/lib/llama-cpp-isolated"
-    install -m 0755 "$srcdir/run_server.sh" "$pkgdir/usr/lib/llama-cpp-isolated/run_server.sh"
+    # 1. 実行バイナリ
+    install -Dm755 build/bin/llama-server "${pkgdir}/usr/bin/llama-server"
 
-    # 2. 設定ファイルの配置
-    install -d -m 0755 "$pkgdir/etc/conf.d"
-    install -m 0644 "$srcdir/llama-isolated.conf" "$pkgdir/etc/conf.d/llama-isolated"
+    # 2. 共有ライブラリ (.so) を専用ディレクトリに隔離配置（whisper-cpp 等との衝突を防止）
+    install -d "${pkgdir}/usr/lib/llama-cpp-isolated"
+    find build/bin build -maxdepth 2 -name "*.so*" -exec cp -d {} "${pkgdir}/usr/lib/llama-cpp-isolated/" \;
+    find "${pkgdir}/usr/lib/llama-cpp-isolated" -type f -name "*.so*" -exec chmod 755 {} +
 
-    # 3. モデル格納ディレクトリの準備
-    install -d -m 0755 "$pkgdir/srv/llama/models"
-    install -m 0644 "$srcdir/${_model_filename}" "$pkgdir/srv/llama/models/${_model_filename}"
-
-    # 4. systemd サービスの配置
-    install -d -m 0755 "$pkgdir/usr/lib/systemd/system"
-    install -m 0644 "$srcdir/llama-cpp.service" "$pkgdir/usr/lib/systemd/system/llama-cpp.service"
+    # 3. 隔離ランナー・systemdユニット・設定ファイル・sysusers定義
+    install -Dm755 "${srcdir}/run_server.sh" "${pkgdir}/usr/lib/llama-cpp-isolated/run_server.sh"
+    install -Dm644 "${srcdir}/llama-cpp.service" "${pkgdir}/usr/lib/systemd/system/llama-cpp.service"
+    install -Dm644 "${srcdir}/llama-isolated.conf" "${pkgdir}/etc/conf.d/llama-isolated"
+    install -Dm644 "${srcdir}/llama-user.conf" "${pkgdir}/usr/lib/sysusers.d/llama-cpp.conf"
 }
